@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Good Books</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: #f6f7f9;
+      color: #1f2328;
+      margin: 0;
+      padding: 32px 16px;
+    }
+    main { max-width: 760px; margin: 0 auto; }
+    h1 { margin: 0 0 4px; }
+    .subtitle { color: #57606a; margin: 0 0 20px; }
+    .toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    button {
+      padding: 8px 14px; border: 1px solid #d0d7de; border-radius: 6px;
+      background: #fff; cursor: pointer; font-size: 14px;
+    }
+    button:hover { background: #f3f4f6; }
+
+    /* Loading state */
+    .loading { display: flex; align-items: center; gap: 10px; color: #57606a; padding: 16px 0; }
+    .spinner {
+      width: 18px; height: 18px; border: 3px solid #d0d7de; border-top-color: #0969da;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Error state */
+    .error {
+      background: #ffebe9; border: 1px solid #ff8182; color: #82071e;
+      padding: 12px 14px; border-radius: 6px;
+    }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; background: #fff;
+            border: 1px solid #d0d7de; border-radius: 6px; overflow: hidden; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eaeef2; }
+    th { background: #f6f8fa; font-size: 13px; text-transform: uppercase; letter-spacing: .03em; }
+    tr:last-child td { border-bottom: none; }
+
+    /* Conditional styling: rating >= 4 */
+    tr.high-rating { background: #dafbe1; }
+    tr.high-rating td.rating { font-weight: 700; color: #116329; }
+    tr.low-rating td.rating { color: #9a6700; }
+
+    .legend { font-size: 13px; color: #57606a; margin-top: 10px; }
+    .swatch { display: inline-block; width: 12px; height: 12px; background: #dafbe1;
+              border: 1px solid #4ac26b; vertical-align: middle; margin-right: 4px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Good Books</h1>
+    <p class="subtitle">Data loaded from <code>GET /goodbooks</code></p>
+
+    <div class="toolbar">
+      <button id="reload">Reload</button>
+      <button id="simulate-error">Simulate error</button>
+    </div>
+
+    <div id="loading" class="loading" hidden>
+      <div class="spinner"></div><span>Loading books…</span>
+    </div>
+    <div id="error" class="error" hidden></div>
+
+    <table id="books-table" hidden>
+      <thead><tr id="table-head"></tr></thead>
+      <tbody id="table-body"></tbody>
+    </table>
+    <p id="legend" class="legend" hidden><span class="swatch"></span>Rating of 4 or higher</p>
+  </main>
+
+  <script>
+    const API_URL = "/goodbooks";   // renamed from /books
+
+    const loadingEl = document.getElementById("loading");
+    const errorEl   = document.getElementById("error");
+    const tableEl   = document.getElementById("books-table");
+    const headEl    = document.getElementById("table-head");
+    const bodyEl    = document.getElementById("table-body");
+    const legendEl  = document.getElementById("legend");
+
+    function setState(state, message = "") {
+      loadingEl.hidden = state !== "loading";
+      errorEl.hidden   = state !== "error";
+      tableEl.hidden   = state !== "success";
+      legendEl.hidden  = state !== "success";
+      if (state === "error") errorEl.textContent = message;
+    }
+
+    // Build the table dynamically from whatever keys the JSON contains
+    function renderTable(books) {
+      headEl.innerHTML = "";
+      bodyEl.innerHTML = "";
+
+      if (!Array.isArray(books) || books.length === 0) {
+        setState("error", "No books were returned.");
+        return;
+      }
+
+      // Show the usual fields first, then any extra keys the API adds later
+      const preferred = ["id", "title", "author", "rating"];
+      const keys = Object.keys(books[0]);
+      const columns = [...preferred.filter(k => keys.includes(k)), ...keys.filter(k => !preferred.includes(k))];
+      columns.forEach(col => {
+        const th = document.createElement("th");
+        th.textContent = col;
+        headEl.appendChild(th);
+      });
+
+      books.forEach(book => {
+        const tr = document.createElement("tr");
+        tr.className = book.rating >= 4 ? "high-rating" : "low-rating";   // conditional styling
+        columns.forEach(col => {
+          const td = document.createElement("td");
+          td.textContent = col === "rating" ? "★".repeat(book.rating) + ` (${book.rating})` : book[col];
+          if (col === "rating") td.classList.add("rating");
+          tr.appendChild(td);
+        });
+        bodyEl.appendChild(tr);
+      });
+
+      setState("success");
+    }
+
+    async function loadBooks(url = API_URL) {
+      setState("loading");
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          let detail = "";
+          try { detail = (await response.json()).error || ""; } catch (_) {}
+          throw new Error(`Request failed (${response.status} ${response.statusText})${detail ? ": " + detail : ""}`);
+        }
+        const data = await response.json();
+        renderTable(data);
+      } catch (err) {
+        setState("error", err.message.startsWith("Request failed")
+          ? err.message
+          : "Could not reach the server. Is the Flask app running?");
+      }
+    }
+
+    document.getElementById("reload").addEventListener("click", () => loadBooks());
+    // Calls a non-existent endpoint to show the error state
+    document.getElementById("simulate-error").addEventListener("click", () => loadBooks("/books-does-not-exist"));
+
+    loadBooks();
+  </script>
+</body>
+</html>
